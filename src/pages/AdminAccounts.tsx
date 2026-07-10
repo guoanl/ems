@@ -1,13 +1,47 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { 
   Plus, Search, Edit2, Key, Trash2, X, AlertTriangle, 
   ChevronLeft, ChevronRight, Check, Building2, Clock, 
-  FileText, BarChart3, Download, ClipboardList
+  FileText, Download, ClipboardList
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { api } from '../lib/api';
 import { Account, EnterpriseOverview, Task } from '../types';
+
+interface EnterpriseCardProps {
+  ent: EnterpriseOverview;
+  onSelect: (id: number) => void;
+}
+
+const EnterpriseCard = React.memo(({ ent, onSelect }: EnterpriseCardProps) => (
+  <motion.div
+    key={ent.id}
+    whileHover={{ y: -4 }}
+    onClick={() => onSelect(ent.id)}
+    className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all cursor-pointer"
+  >
+    <div className="flex items-start justify-between mb-4">
+      <div className="bg-slate-100 p-3 rounded-xl">
+        <Building2 className="w-6 h-6" />
+      </div>
+      <div className={`px-3 py-1 rounded-full text-xs font-medium ${ent.status === '已填报' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
+        {ent.status}
+      </div>
+    </div>
+    
+    <h3 className="text-lg font-bold text-slate-900 mb-1">{ent.enterprise_name}</h3>
+    <p className="text-sm text-slate-500 mb-4">账号：{ent.username}</p>
+    
+    <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
+      <div className="flex items-center gap-1">
+        <Clock className="w-3 h-3" />
+        <span>最后填报：{ent.last_reported_at ? new Date(ent.last_reported_at).toLocaleString() : '从未填报'}</span>
+      </div>
+      <ChevronRight className="w-4 h-4" />
+    </div>
+  </motion.div>
+));
 
 export default function AdminAccounts() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -20,7 +54,6 @@ export default function AdminAccounts() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
 
-  // Modal states
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
@@ -31,11 +64,7 @@ export default function AdminAccounts() {
   const [newPassword, setNewPassword] = useState('');
   const [batchTask, setBatchTask] = useState({ name: '', target_type: 'number' as 'number' | 'boolean' | 'text', target_value: '' });
 
-  useEffect(() => {
-    fetchData();
-  }, [activeTab, page]);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       if (activeTab === 'accounts') {
@@ -51,9 +80,13 @@ export default function AdminAccounts() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [activeTab, page]);
 
-  const handleOpenAccountModal = async (id?: number) => {
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const handleOpenAccountModal = useCallback(async (id?: number) => {
     if (id) {
       const res = await api.admin.getAccount(id);
       setEditingAccount(res);
@@ -66,9 +99,9 @@ export default function AdminAccounts() {
       });
     }
     setIsAccountModalOpen(true);
-  };
+  }, []);
 
-  const handleSaveAccount = async (e: React.FormEvent) => {
+  const handleSaveAccount = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       if (editingAccount.id) {
@@ -81,9 +114,9 @@ export default function AdminAccounts() {
     } catch (err: any) {
       alert(err.message);
     }
-  };
+  }, [editingAccount, fetchData]);
 
-  const handleResetPassword = async () => {
+  const handleResetPassword = useCallback(async () => {
     if (!resettingId) return;
     try {
       await api.admin.resetPassword(resettingId, { password: newPassword });
@@ -93,9 +126,9 @@ export default function AdminAccounts() {
     } catch (err: any) {
       alert(err.message);
     }
-  };
+  }, [resettingId, newPassword]);
 
-  const handleDeleteAccount = async () => {
+  const handleDeleteAccount = useCallback(async () => {
     if (!deletingId) return;
     try {
       await api.admin.deleteAccount(deletingId);
@@ -104,9 +137,9 @@ export default function AdminAccounts() {
     } catch (err: any) {
       alert(err.message);
     }
-  };
+  }, [deletingId, fetchData]);
 
-  const handleBatchAddTask = async () => {
+  const handleBatchAddTask = useCallback(async () => {
     try {
       await api.admin.batchAddTask(batchTask);
       setIsBatchTaskModalOpen(false);
@@ -116,7 +149,7 @@ export default function AdminAccounts() {
     } catch (err: any) {
       alert(err.message);
     }
-  };
+  }, [batchTask, fetchData]);
 
   return (
     <div className="space-y-6">
@@ -256,32 +289,11 @@ export default function AdminAccounts() {
           ) : enterprises.length === 0 ? (
             <div className="col-span-full py-12 text-center text-slate-400">暂无企业数据</div>
           ) : enterprises.map((ent) => (
-            <motion.div
-              key={ent.id}
-              whileHover={{ y: -4 }}
-              onClick={() => navigate(`/admin/enterprises/${ent.id}`)}
-              className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all cursor-pointer group"
-            >
-              <div className="flex items-start justify-between mb-4">
-                <div className="bg-slate-100 p-3 rounded-xl group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors">
-                  <Building2 className="w-6 h-6" />
-                </div>
-                <div className={`px-3 py-1 rounded-full text-xs font-medium ${ent.status === '已填报' ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
-                  {ent.status}
-                </div>
-              </div>
-              
-              <h3 className="text-lg font-bold text-slate-900 mb-1">{ent.enterprise_name}</h3>
-              <p className="text-sm text-slate-500 mb-4">账号：{ent.username}</p>
-              
-              <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
-                <div className="flex items-center gap-1">
-                  <Clock className="w-3 h-3" />
-                  <span>最后填报：{ent.last_reported_at ? new Date(ent.last_reported_at).toLocaleString() : '从未填报'}</span>
-                </div>
-                <ChevronRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-              </div>
-            </motion.div>
+            <EnterpriseCard 
+              key={ent.id} 
+              ent={ent} 
+              onSelect={(id) => navigate(`/admin/enterprises/${id}`)} 
+            />
           ))}
         </div>
       )}

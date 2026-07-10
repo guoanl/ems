@@ -6,6 +6,8 @@ import jwt from 'jsonwebtoken';
 import multer from 'multer';
 import fs from 'fs';
 import cors from 'cors';
+import compression from 'compression';
+import helmet from 'helmet';
 
 let appDir = process.cwd();
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
@@ -36,7 +38,7 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER,
     name TEXT,
-    target_type TEXT, -- 'number' or 'boolean'
+    target_type TEXT,
     target_value TEXT,
     actual_value TEXT,
     remarks TEXT,
@@ -52,6 +54,11 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
   );
+
+  CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
+  CREATE INDEX IF NOT EXISTS idx_tasks_id ON tasks(id);
+  CREATE INDEX IF NOT EXISTS idx_attachments_task_id ON attachments(task_id);
+  CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 `);
 
 // Migration: Move existing attachments from tasks to attachments table
@@ -78,8 +85,10 @@ if (!adminExists) {
 }
 
 const app = express();
+app.use(helmet());
 app.use(cors());
-app.use(express.json());
+app.use(compression());
+app.use(express.json({ limit: '10mb' }));
 
 // File Upload Setup
 const uploadDir = path.join(appDir, 'uploads');
@@ -285,8 +294,17 @@ app.get('/api/admin/enterprises/:id', authenticate, isAdmin, (req, res) => {
   const user: any = db.prepare('SELECT id, username, enterprise_name FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: '未找到该企业信息' });
   const tasks = db.prepare('SELECT * FROM tasks WHERE user_id = ?').all(user.id) as any[];
+  const taskIds = tasks.map(t => t.id);
+  const attachments = taskIds.length > 0 
+    ? db.prepare('SELECT * FROM attachments WHERE task_id IN (' + taskIds.map(() => '?').join(',') + ')').all(...taskIds) as any[]
+    : [];
+  const attachmentsMap = new Map();
+  for (const att of attachments) {
+    if (!attachmentsMap.has(att.task_id)) attachmentsMap.set(att.task_id, []);
+    attachmentsMap.get(att.task_id).push(att);
+  }
   for (const task of tasks) {
-    task.attachments = db.prepare('SELECT * FROM attachments WHERE task_id = ?').all(task.id);
+    task.attachments = attachmentsMap.get(task.id) || [];
   }
   res.json({ ...user, tasks });
 });
@@ -294,8 +312,17 @@ app.get('/api/admin/enterprises/:id', authenticate, isAdmin, (req, res) => {
 // Client: Get Tasks
 app.get('/api/client/tasks', authenticate, (req: any, res) => {
   const tasks = db.prepare('SELECT * FROM tasks WHERE user_id = ?').all(req.user.id) as any[];
+  const taskIds = tasks.map(t => t.id);
+  const attachments = taskIds.length > 0 
+    ? db.prepare('SELECT * FROM attachments WHERE task_id IN (' + taskIds.map(() => '?').join(',') + ')').all(...taskIds) as any[]
+    : [];
+  const attachmentsMap = new Map();
+  for (const att of attachments) {
+    if (!attachmentsMap.has(att.task_id)) attachmentsMap.set(att.task_id, []);
+    attachmentsMap.get(att.task_id).push(att);
+  }
   for (const task of tasks) {
-    task.attachments = db.prepare('SELECT * FROM attachments WHERE task_id = ?').all(task.id);
+    task.attachments = attachmentsMap.get(task.id) || [];
   }
   res.json(tasks);
 });
@@ -356,22 +383,11 @@ app.get('/api/download/:filename', (req, res) => {
   }
 });
 
-// --- Vite Integration ---
-
 async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
-    const { createServer } = await import('vite');
-    const vite = await createServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
-    app.use(vite.middlewares);
-  } else {
-    app.use(express.static(path.join(appDir, 'dist')));
-    app.get('*', (req, res) => {
-      res.sendFile(path.join(appDir, 'dist', 'index.html'));
-    });
-  }
+  app.use(express.static(path.join(appDir, 'dist')));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(appDir, 'dist', 'index.html'));
+  });
 
   const PORT = 3000;
   app.listen(PORT, '0.0.0.0', () => {

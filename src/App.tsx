@@ -1,11 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { LogOut, User as UserIcon, Building2, ClipboardList, ChevronRight, LayoutDashboard } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { LogOut, User as UserIcon, ClipboardList } from 'lucide-react';
 import { api } from './lib/api';
-import { User } from './types';
 
-// Pages
 import Login from './pages/Login';
 import AdminHome from './pages/AdminHome';
 import AdminAccounts from './pages/AdminAccounts';
@@ -14,8 +11,7 @@ import ClientHome from './pages/ClientHome';
 
 const Layout = ({ children }: { children: React.ReactNode }) => {
   const navigate = useNavigate();
-  const location = useLocation();
-  const user = api.user as User;
+  const user = api.user as any;
 
   const handleLogout = () => {
     api.token = null;
@@ -53,17 +49,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
       </header>
 
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={location.pathname}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.2 }}
-          >
-            {children}
-          </motion.div>
-        </AnimatePresence>
+        {children}
       </main>
     </div>
   );

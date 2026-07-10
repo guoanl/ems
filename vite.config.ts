@@ -10,7 +10,21 @@ export default defineConfig(({mode}) => {
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
     },
     server: {
-      hmr: process.env.DISABLE_HMR !== 'true',
+      port: 5173,
+      proxy: {
+        '/api': {
+          target: 'http://localhost:3000',
+          changeOrigin: true,
+        },
+        '/uploads': {
+          target: 'http://localhost:3000',
+          changeOrigin: true,
+        },
+        '/download': {
+          target: 'http://localhost:3000',
+          changeOrigin: true,
+        },
+      },
     },
   };
 });

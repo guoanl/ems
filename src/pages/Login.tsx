@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ClipboardList, Lock, User as UserIcon, AlertCircle } from 'lucide-react';
-import { motion } from 'motion/react';
 import { api } from '../lib/api';
 
 export default function Login() {
@@ -34,11 +33,7 @@ export default function Login() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="max-w-md w-full bg-white rounded-2xl shadow-xl shadow-slate-200/50 border border-slate-100 p-8"
-      >
+      <div className="max-w-md w-full bg-white rounded-2xl shadow-xl shadow-slate-200/50 border border-slate-100 p-8">
         <div className="flex flex-col items-center mb-8">
           <div className="bg-indigo-600 p-3 rounded-2xl mb-4 shadow-lg shadow-indigo-200">
             <ClipboardList className="w-8 h-8 text-white" />
@@ -97,7 +92,7 @@ export default function Login() {
         <div className="mt-8 pt-6 border-t border-slate-100 text-center">
           <p className="text-xs text-slate-400">© 重庆大学璧山先进技术研究院 版权所有</p>
         </div>
-      </motion.div>
+      </div>
     </div>
   );
 }
