@@ -62,7 +62,7 @@ export default function AdminAccounts() {
   const [resettingId, setResettingId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [newPassword, setNewPassword] = useState('');
-  const [batchTask, setBatchTask] = useState({ name: '', target_type: 'number' as 'number' | 'boolean' | 'text', target_value: '' });
+  const [batchTask, setBatchTask] = useState({ name: '', target_type: 'number' as 'number' | 'boolean' | 'text', target_value: '', description: '' });
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -143,7 +143,7 @@ export default function AdminAccounts() {
     try {
       await api.admin.batchAddTask(batchTask);
       setIsBatchTaskModalOpen(false);
-      setBatchTask({ name: '', target_type: 'number', target_value: '' });
+      setBatchTask({ name: '', target_type: 'number', target_value: '', description: '' });
       fetchData();
       alert('任务已批量添加到所有企业');
     } catch (err: any) {
@@ -366,7 +366,7 @@ export default function AdminAccounts() {
                       type="button"
                       onClick={() => setEditingAccount({
                         ...editingAccount, 
-                        tasks: [...editingAccount.tasks, { name: '', target_type: 'number', target_value: '' }]
+                        tasks: [...editingAccount.tasks, { name: '', target_type: 'number', target_value: '', description: '' }]
                       })}
                       className="text-xs font-semibold text-indigo-600 hover:bg-indigo-50 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1"
                     >
@@ -454,6 +454,20 @@ export default function AdminAccounts() {
                                 readOnly
                               />
                             )}
+                          </div>
+                          <div className="space-y-1 sm:col-span-3">
+                            <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">任务描述</label>
+                            <textarea
+                              value={task.description || ''}
+                              onChange={e => {
+                                const newTasks = [...editingAccount.tasks];
+                                newTasks[idx].description = e.target.value;
+                                setEditingAccount({...editingAccount, tasks: newTasks});
+                              }}
+                              rows={2}
+                              className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
+                              placeholder="请输入任务描述，方便企业了解需要填写哪些内容..."
+                            />
                           </div>
                         </div>
                         <button 
@@ -573,7 +587,7 @@ export default function AdminAccounts() {
               <div className="space-y-4">
                 <div className="p-4 bg-amber-50 rounded-xl border border-amber-100">
                   <p className="text-sm text-amber-700 flex items-start gap-2">
-                    <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                    <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
                     此操作将为所有企业账号添加相同的考核任务，请确认任务配置正确。
                   </p>
                 </div>
@@ -638,6 +652,16 @@ export default function AdminAccounts() {
                         />
                       )}
                     </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] uppercase tracking-wider font-bold text-slate-400">任务描述</label>
+                    <textarea
+                      value={batchTask.description || ''}
+                      onChange={e => setBatchTask({...batchTask, description: e.target.value})}
+                      rows={2}
+                      className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
+                      placeholder="请输入任务描述，方便企业了解需要填写哪些内容..."
+                    />
                   </div>
                 </div>
               </div>

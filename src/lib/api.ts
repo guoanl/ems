@@ -63,6 +63,9 @@ export const api = {
     getEnterpriseDetail(id: number) {
       return api.request(`/admin/enterprises/${id}`);
     },
+    getAuditLogs(id: number) {
+      return api.request(`/admin/enterprises/${id}/audit-logs`);
+    },
     batchAddTask(data: any) {
       return api.request('/admin/tasks/batch', { method: 'POST', body: JSON.stringify(data) });
     }

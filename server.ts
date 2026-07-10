@@ -8,9 +8,23 @@ import fs from 'fs';
 import cors from 'cors';
 import compression from 'compression';
 import helmet from 'helmet';
+import iconv from 'iconv-lite';
 
 let appDir = process.cwd();
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+
+const normalizeFilename = (filename: string): string => {
+  try {
+    const decoded = iconv.decode(Buffer.from(filename, 'latin1'), 'utf8');
+    const hasGarbledChars = /[\u0080-\u00ff]/.test(filename);
+    if (hasGarbledChars || decoded !== filename) {
+      return decoded;
+    }
+  } catch {
+    console.error('Filename decoding failed');
+  }
+  return filename;
+};
 
 // Configuration for persistence
 const DATA_DIR = process.env.DATA_DIR || appDir;
@@ -55,10 +69,25 @@ db.exec(`
     FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    task_id INTEGER,
+    task_name TEXT,
+    field_name TEXT,
+    old_value TEXT,
+    new_value TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+  );
+
   CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id);
   CREATE INDEX IF NOT EXISTS idx_tasks_id ON tasks(id);
   CREATE INDEX IF NOT EXISTS idx_attachments_task_id ON attachments(task_id);
   CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+  CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);
+  CREATE INDEX IF NOT EXISTS idx_audit_logs_task_id ON audit_logs(task_id);
 `);
 
 // Migration: Move existing attachments from tasks to attachments table
@@ -70,8 +99,18 @@ try {
     for (const task of tasksWithAttachments) {
       db.prepare("INSERT INTO attachments (task_id, name, path) VALUES (?, ?, ?)").run(task.id, task.attachment_name, task.attachment_path);
     }
-    // We can't easily drop columns in SQLite without recreating the table, so we'll just leave them or set to NULL
     db.prepare("UPDATE tasks SET attachment_name = NULL, attachment_path = NULL").run();
+  }
+} catch (err) {
+  console.error("Migration failed:", err);
+}
+
+// Migration: Add description column to tasks table
+try {
+  const tableInfo = db.prepare("PRAGMA table_info(tasks)").all() as any[];
+  const hasDescription = tableInfo.some(col => col.name === 'description');
+  if (!hasDescription) {
+    db.prepare("ALTER TABLE tasks ADD COLUMN description TEXT").run();
   }
 } catch (err) {
   console.error("Migration failed:", err);
@@ -102,7 +141,10 @@ const storage = multer.diskStorage({
   },
   filename: (req, file, cb) => {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + '-' + file.originalname);
+    const ext = path.extname(file.originalname);
+    const baseName = path.basename(file.originalname, ext);
+    const normalizedBaseName = normalizeFilename(baseName);
+    cb(null, uniqueSuffix + ext);
   }
 });
 const upload = multer({ storage });
@@ -154,7 +196,7 @@ app.get('/api/admin/accounts', authenticate, isAdmin, (req, res) => {
 app.get('/api/admin/accounts/:id', authenticate, isAdmin, (req, res) => {
   const user: any = db.prepare('SELECT id, username, enterprise_name FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: '未找到该账号信息' });
-  const tasks = db.prepare('SELECT id, name, target_type, target_value FROM tasks WHERE user_id = ?').all(user.id);
+  const tasks = db.prepare('SELECT id, name, target_type, target_value, description FROM tasks WHERE user_id = ?').all(user.id);
   res.json({ ...user, tasks });
 });
 
@@ -172,7 +214,7 @@ app.post('/api/admin/accounts', authenticate, isAdmin, (req, res) => {
     const userId = result.lastInsertRowid;
     
     for (const task of tasks) {
-      db.prepare('INSERT INTO tasks (user_id, name, target_type, target_value) VALUES (?, ?, ?, ?)').run(userId, task.name, task.target_type, task.target_value.toString());
+      db.prepare('INSERT INTO tasks (user_id, name, target_type, target_value, description) VALUES (?, ?, ?, ?, ?)').run(userId, task.name, task.target_type, task.target_value.toString(), task.description || '');
     }
     return userId;
   });
@@ -212,7 +254,7 @@ app.put('/api/admin/accounts/:id', authenticate, isAdmin, (req, res) => {
     // Replace tasks
     db.prepare('DELETE FROM tasks WHERE user_id = ?').run(userId);
     for (const task of tasks) {
-      db.prepare('INSERT INTO tasks (user_id, name, target_type, target_value) VALUES (?, ?, ?, ?)').run(userId, task.name, task.target_type, task.target_value.toString());
+      db.prepare('INSERT INTO tasks (user_id, name, target_type, target_value, description) VALUES (?, ?, ?, ?, ?)').run(userId, task.name, task.target_type, task.target_value.toString(), task.description || '');
     }
   });
 
@@ -244,7 +286,7 @@ app.delete('/api/admin/accounts/:id', authenticate, isAdmin, (req, res) => {
 
 // Admin: Batch Add Task to All Enterprises
 app.post('/api/admin/tasks/batch', authenticate, isAdmin, (req, res) => {
-  const { name, target_type, target_value } = req.body;
+  const { name, target_type, target_value, description } = req.body;
   
   if (!name || !target_type) {
     return res.status(400).json({ error: '任务名称和目标类型不能为空' });
@@ -259,8 +301,8 @@ app.post('/api/admin/tasks/batch', authenticate, isAdmin, (req, res) => {
   const transaction = db.transaction(() => {
     let count = 0;
     for (const ent of enterprises) {
-      db.prepare('INSERT INTO tasks (user_id, name, target_type, target_value) VALUES (?, ?, ?, ?)')
-        .run(ent.id, name, target_type, target_value.toString());
+      db.prepare('INSERT INTO tasks (user_id, name, target_type, target_value, description) VALUES (?, ?, ?, ?, ?)')
+        .run(ent.id, name, target_type, target_value.toString(), description || '');
       count++;
     }
     return count;
@@ -335,14 +377,30 @@ app.post('/api/client/save-all', authenticate, upload.any(), (req: any, res) => 
 
   const transaction = db.transaction(() => {
     for (const item of data) {
-      // Update task data
+      const existingTask = db.prepare('SELECT * FROM tasks WHERE id = ? AND user_id = ?').get(item.taskId, userId) as any;
+
+      if (existingTask) {
+        if (existingTask.actual_value !== item.actualValue.toString()) {
+          db.prepare(`
+            INSERT INTO audit_logs (user_id, task_id, task_name, field_name, old_value, new_value)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `).run(userId, item.taskId, existingTask.name, 'actual_value', existingTask.actual_value || '', item.actualValue.toString());
+        }
+
+        if (existingTask.remarks !== (item.remarks || '')) {
+          db.prepare(`
+            INSERT INTO audit_logs (user_id, task_id, task_name, field_name, old_value, new_value)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `).run(userId, item.taskId, existingTask.name, 'remarks', existingTask.remarks || '', item.remarks || '');
+        }
+      }
+
       db.prepare(`
         UPDATE tasks 
         SET actual_value = ?, remarks = ?, updated_at = datetime('now') 
         WHERE id = ? AND user_id = ?
       `).run(item.actualValue.toString(), item.remarks || '', item.taskId, userId);
 
-      // Handle deletions
       if (item.deleteAttachmentIds && item.deleteAttachmentIds.length > 0) {
         for (const attachmentId of item.deleteAttachmentIds) {
           const attachment = db.prepare('SELECT path FROM attachments WHERE id = ? AND task_id = ?').get(attachmentId, item.taskId) as any;
@@ -354,12 +412,12 @@ app.post('/api/client/save-all', authenticate, upload.any(), (req: any, res) => 
         }
       }
 
-      // Handle new uploads
       const taskFiles = files.filter(f => f.fieldname === `files_${item.taskId}`);
       for (const file of taskFiles) {
+        const normalizedName = normalizeFilename(file.originalname);
         db.prepare(`
           INSERT INTO attachments (task_id, name, path) VALUES (?, ?, ?)
-        `).run(item.taskId, file.originalname, file.filename);
+        `).run(item.taskId, normalizedName, file.filename);
       }
     }
   });
@@ -375,12 +433,30 @@ app.post('/api/client/save-all', authenticate, upload.any(), (req: any, res) => 
 
 // Download Attachment
 app.get('/api/download/:filename', (req, res) => {
-  const filePath = path.join(uploadDir, req.params.filename);
+  const filename = req.params.filename;
+  const filePath = path.join(uploadDir, filename);
   if (fs.existsSync(filePath)) {
-    res.download(filePath);
+    const attachment = db.prepare('SELECT name FROM attachments WHERE path = ?').get(filename) as any;
+    const displayName = attachment?.name || filename;
+    const encodedName = encodeURIComponent(displayName).replace(/'/g, "%27").replace(/"/g, "%22");
+    res.setHeader('Content-Disposition', `attachment; filename="${encodedName}"; filename*=UTF-8''${encodedName}`);
+    res.sendFile(filePath);
   } else {
     res.status(404).json({ error: 'File not found' });
   }
+});
+
+// Admin: Get Audit Logs for Enterprise
+app.get('/api/admin/enterprises/:id/audit-logs', authenticate, isAdmin, (req, res) => {
+  const userId = Number(req.params.id);
+  const logs = db.prepare(`
+    SELECT al.*, u.enterprise_name 
+    FROM audit_logs al
+    JOIN users u ON al.user_id = u.id
+    WHERE al.user_id = ?
+    ORDER BY al.created_at DESC
+  `).all(userId) as any[];
+  res.json(logs);
 });
 
 async function startServer() {

@@ -21,6 +21,7 @@ export interface Task {
   name: string;
   target_type: 'number' | 'boolean' | 'text';
   target_value: string;
+  description?: string;
   actual_value?: string;
   attachments?: Attachment[];
   remarks?: string;

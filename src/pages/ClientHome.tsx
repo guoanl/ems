@@ -52,6 +52,11 @@ const TaskCard = React.memo(({ task, edit, onEditChange }: TaskCardProps) => {
           <div className="flex items-start justify-between">
             <div>
               <h3 className="text-lg font-bold text-slate-900">{task.name}</h3>
+              {task.description && (
+                <p className="text-sm text-slate-500 mt-1 leading-relaxed">
+                  {task.description}
+                </p>
+              )}
               {task.target_type !== 'text' && (
                 <p className="text-sm text-slate-500">
                   目标值：
