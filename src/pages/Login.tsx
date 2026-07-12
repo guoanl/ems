@@ -38,7 +38,7 @@ export default function Login() {
           <div className="bg-indigo-600 p-3 rounded-2xl mb-4 shadow-lg shadow-indigo-200">
             <ClipboardList className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-slate-900">璧山研究院企业考核管理系统</h1>
+          <h1 className="text-2xl font-bold text-slate-900">璧山研究院企业管理系统</h1>
           <p className="text-slate-500 mt-1">请登录您的账号以继续</p>
         </div>
 
